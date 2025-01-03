@@ -12,66 +12,65 @@ bot = telebot.TeleBot(TOKEN)
 # Создание базы данных и таблицы (если не существует)
 conn = sqlite3.connect('consultations.db')
 cursor = conn.cursor()
-cursor.execute('''CREATE TABLE IF NOT EXISTS consultations
-                   (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, date TEXT, time TEXT, description TEXT)''')
+cursor.execute('''
+    CREATE TABLE IF NOT EXISTS consultations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, 
+        user_id INTEGER, 
+        user_name TEXT, 
+        date TEXT, 
+        time TEXT, 
+        description TEXT
+    )
+''')
 conn.commit()
 
 def add_consultation(message, date, time, description):
     """
     Добавляет новую консультацию в базу данных.
-
-    Args:
-        message: Сообщение пользователя.
-        date: Дата консультации в формате YYYY-MM-DD.
-        time: Время консультации в формате HH:MM.
-        description: Описание консультации.
     """
-
-    # Проверка корректности даты и времени
     try:
         datetime.strptime(date + " " + time, "%Y-%m-%d %H:%M")
     except ValueError:
-        bot.reply_to(message, "Некорректный формат даты или времени. Пожалуйста, используйте формат ГГГГ-ММ-ДД ЧЧ:ММ")
+        bot.reply_to(message, "Некорректный формат даты или времени. Используйте ГГГГ-ММ-ДД ЧЧ:ММ")
         return
 
-    # Проверка, что дата не раньше текущей
     today = datetime.now().date().strftime('%Y-%m-%d')
     if date < today:
-        bot.reply_to(message, "Дата консультации не может быть раньше сегодняшней.")
+        bot.reply_to(message, "Дата записи не может быть раньше сегодняшней.")
         return
 
     user_id = message.from_user.id
-    # Исправленный запрос: предполагаем, что столбец id автоинкрементный
+    user_name = message.from_user.full_name
+
     conn = sqlite3.connect('consultations.db')
     cursor = conn.cursor()
-    cursor.execute("INSERT INTO consultations (user_id, date, time, description) VALUES (?, ?, ?, ?)",
-                   (user_id, date, time, description))
+    cursor.execute("INSERT INTO consultations (user_id, user_name, date, time, description) VALUES (?, ?, ?, ?, ?)",
+                   (user_id, user_name, date, time, description))
     conn.commit()
     conn.close()
-    bot.reply_to(message, f"Консультация успешно добавлена на {date} в {time}: {description}")
+    bot.reply_to(message, f"Запись успешно добавлена на {date} в {time}: {description}")
     send_main_menu(message)
 
 def get_all_consultations(message):
     """
     Выводит список всех консультаций пользователя.
     """
-    # Создание нового соединения с базой данных
     conn = sqlite3.connect('consultations.db')
     cursor = conn.cursor()
 
     user_id = message.from_user.id
-    cursor.execute("SELECT * FROM consultations WHERE user_id=?", (user_id,))
+    cursor.execute("SELECT id, user_name, date, time, description FROM consultations WHERE user_id=?", (user_id,))
     rows = cursor.fetchall()
 
     if rows:
-        response = "Все ваши консультации:\n"
+        response = "Все записи:\n"
         for row in rows:
-            response += f"{row[0]} {row[2]}: {row[3]}\n {row[4]}\n "
+            response += f"№{row[0]}, {row[1]} {row[2]}: {row[3]}\n{row[4]}\n"
         bot.reply_to(message, response)
     else:
-        bot.reply_to(message, "У вас нет запланированных консультаций.")
+        bot.reply_to(message, "Записей нет.")
 
-    conn.close()  # Закрытие соединения с базой данных
+    conn.close()
     send_main_menu(message)
 
 def get_next_week_consultations(message):
@@ -85,18 +84,19 @@ def get_next_week_consultations(message):
     user_id = message.from_user.id
     today = datetime.now()
     next_week = today + timedelta(days=7)
+    print(user_id, today.strftime('%Y-%m-%d'), next_week.strftime('%Y-%m-%d'))
 
     cursor.execute("SELECT * FROM consultations WHERE user_id=? AND date BETWEEN ? AND ?",
                    (user_id, today.strftime('%Y-%m-%d'), next_week.strftime('%Y-%m-%d')))
     rows = cursor.fetchall()
 
     if rows:
-        response = "Ваши консультации на следующую неделю:\n"
+        response = "Ваши записи на следующую неделю:\n"
         for row in rows:
-            response += f"{row[0]} {row[2]}: {row[3]}\n {row[4]}\n "
+            response += f"№{row[0]} {row[3]}: {row[4]}\n{row[5]}\n "
         bot.reply_to(message, response)
     else:
-        bot.reply_to(message, "У вас нет консультаций на следующую неделю.")
+        bot.reply_to(message, "У вас нет записей на следующую неделю.")
 
     conn.close()  # Закрытие соединения с базой данных
     send_main_menu(message)
@@ -121,9 +121,9 @@ def delete_consultation(message, consultation_id):
         print(consultation_id)
         cursor.execute("DELETE FROM consultations WHERE id=?", (consultation_id,))
         conn.commit()
-        bot.reply_to(message, "Консультация успешно удалена.")
+        bot.reply_to(message, "Запись успешно удалена.")
     else:
-        bot.reply_to(message, "Консультация не найдена или вы не являетесь ее владельцем.")
+        bot.reply_to(message, "Запись не найдена или вы не являетесь ее владельцем.")
 
     conn.close()  # Закрытие соединения с базой данных
     send_main_menu(message)
@@ -155,10 +155,10 @@ def send_main_menu(message):
     Функция для отправки основного меню.
     """
     markup = create_reply_keyboard([
-        types.KeyboardButton('Новая консультация'),
-        types.KeyboardButton('Мои консультации'),
-        types.KeyboardButton('Консультации на следующую неделю'),
-        types.KeyboardButton('Удалить консультацию')
+        types.KeyboardButton('Новая запись'),
+        types.KeyboardButton('Все записи'),
+        types.KeyboardButton('Неделя'),
+        types.KeyboardButton('Удалить запись')
     ])
     bot.reply_to(message, "Привет! доступны такие операции:", reply_markup=markup)
 
@@ -175,16 +175,16 @@ def handle_text(message):
     """
     Обрабатывает текстовые сообщения от пользователя.
     """
-    if message.text.lower() == 'новая консультация':
+    if message.text.lower() == 'новая запись':
         # Начало процесса записи на консультацию
-        msg = bot.reply_to(message, "Введите дату консультации в формате ГГГГ-ММ-ДД:")
+        msg = bot.reply_to(message, "Введите дату записи в формате ГГГГ-ММ-ДД")
         bot.register_next_step_handler(msg, process_date_step)
-    elif message.text.lower() == 'мои консультации':
+    elif message.text.lower() == 'все записи':
         get_all_consultations(message)
-    elif message.text.lower() == 'консультации на следующую неделю':
+    elif message.text.lower() == 'неделя':
         get_next_week_consultations(message)
-    elif message.text.lower() == 'удалить консультацию':
-        msg = bot.reply_to(message, "Введите ID консультации, которую хотите удалить:")
+    elif message.text.lower() == 'удалить запись':
+        msg = bot.reply_to(message, "Введите № записи, которую хотите удалить:")
         bot.register_next_step_handler(msg, process_delete_step)
     else:
         bot.reply_to(message, "Я не понимаю вашу команду. Попробуйте еще раз.")
@@ -194,7 +194,7 @@ def process_date_step(message):
     Обрабатывает шаг записи даты.
     """
     date = message.text
-    msg = bot.reply_to(message, "Введите время консультации в формате ЧЧ:ММ:")
+    msg = bot.reply_to(message, "Введите время записи в формате ЧЧ:ММ")
     bot.register_next_step_handler(msg, process_time_step, date)
 
 def process_time_step(message, date):
@@ -202,7 +202,7 @@ def process_time_step(message, date):
     Обрабатывает шаг записи времени.
     """
     time = message.text
-    msg = bot.reply_to(message, "Введите описание консультации:")
+    msg = bot.reply_to(message, "Введите содержание записи:")
     bot.register_next_step_handler(msg, process_description_step, date, time)
 
 def process_description_step(message, date, time):
@@ -220,7 +220,7 @@ def process_delete_step(message):
         consultation_id = int(message.text)
         delete_consultation(message, consultation_id)
     except ValueError:
-        bot.reply_to(message, "Введите правильный ID консультации.")
+        bot.reply_to(message, "Введите правильный № записи.")
 
 if __name__ == '__main__':
     bot.remove_webhook()  # Удаляем активный вебхук, если он был установлен
